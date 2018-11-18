@@ -14,7 +14,7 @@ public class udpclient
 
         DatagramSocket ds = new DatagramSocket();
 
-        InetAddress ip = InetAddress.getLocalHost();
+        InetAddress ip = InetAddress.getByName(args[0]);
         byte buf[] = null;
 
         while (true)
