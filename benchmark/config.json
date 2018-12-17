@@ -1,0 +1,10 @@
+{
+    "host":"localhost",
+    "port":"3333",
+    "keys":[
+        {"key":"key1","frequency":1},
+        {"key":"key2","frequency":2},
+        {"key":"key3","frequency":3},
+        {"key":"key4","frequency":4}
+    ]
+}
