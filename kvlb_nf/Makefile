@@ -44,7 +44,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
 
 # binary name
-APP = kvlb_base_nf
+APP = kv_loadbalancer
 
 # all source are stored in SRCS-y
 SRCS-y := kvloadbalancer.c

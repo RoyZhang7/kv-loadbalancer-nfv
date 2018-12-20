@@ -6,7 +6,7 @@
  *      2. set kvlb'ip to server or client repesctly
  *      3. get packet flow entry
  *          - if new, save
- *          - if old, send based on rule table
+ *          - if old, send based on flow table
  *      4. detect hotkey, store in cache
  *      5. recalculate checksums
  * 
@@ -47,13 +47,16 @@
 #include "onvm_pkt_helper.h"
 #include "onvm_flow_table.h"
 
-#define NF_TAG "kvloadbalancer"
+#include "cachehk.h"
+#include "hktable.h"
+
+#define NF_TAG "kv_loadbalancer"
 
 /* table size */
-# FLOW_TABLE_SIZE 65536
-# HOTKEY_TABLE_SIZE 
-# MCKEY_LEN 250 //max key length in Memcached is 250 character
-# MCVALUE_LEN  //TODO: 明天和小胖商量决定
+#define FLOW_TABLE_SIZE 65536
+#define HOTKEY_TABLE_SIZE 1000
+#define MCKEY_LEN 250 //max key length in Memcached is 250 character
+#define MCVALUE_LEN 1024 
 
 /* struct def */
 struct kvloadbalancer
@@ -98,69 +101,44 @@ struct flow_info
         int is_active;
 };
 
-struct ht_table
-{
-        uint16_t ht_table_size;
-        uint16_t num_stored;
 
-        // hot keys
-        struct hotkey *hk;
-
-        // window size and stream counter
-        uint16_t lossy_window;
-        uint16_t elapsed_couter;
-        int elapsed_window;
-
-        // lossy counting threshold
-        float frequency;
-        float error;
-
-        int is_ht_detected;
-}
-
-struct hotkey
-{
-        //memcached kv
-        char mc_key[MCKEY_LEN];
-        char mc_value[MCVALUE_LEN];
-
-        unsigned int lossy_counter;
-
-};
-
-// associative array struct
-struct hotkey_cache
-{
-        char mc_key[MCKEY_LEN];
-        char mc_value[MCVALUE_LEN];
-};
-
-/* struct declear */
+/* struct declarition */
 struct onvm_nf_info *nf_info; // struct for information about this NF
+
 struct kvloadbalancer *kvlb;
+
 struct hk_table *hkt;
-struct hotkey_cache *cache;
+struct cache_hk *cache;
+struct cached_kv *c_kv;
 
 extern struct prot_info *ports;
 
-/* varibles declear */
+struct ether_hdr;
+struct ipv4_hdr;
+struct udp_hdr;
+
+/* varibles declarition */
 static uint32_t print_delay = 1000000; // number of package between each print
 
 
-
+/**************************************************/
 /*********** main func related function ***********/
-/*
- * Parse the application arguments.
- *  TODO: modify accordingly
- */
+/**************************************************/
+/* Print a usage message */
+static void
+usage(const char *progname) {
+        printf("Usage: %s [EAL args] -- [NF_LIB args] -- client_iface server_iface server_config -p <print_delay>\n\n", progname);
+}
+
+
+/* Parse the application arguments */
 static int
 parse_app_args(int argc, char *argv[], const char *progname) {
         int c;
-
+        
         kvlb->cfg_filename = NULL;
         kvlb->client_iface_name = NULL;
         kvlb->server_iface_name = NULL;
-        hkt->lossy_window = NULL;
 
         while ((c = getopt(argc, argv, "c:s:f:p:")) != -1) {
                 switch (c) {
@@ -174,7 +152,7 @@ parse_app_args(int argc, char *argv[], const char *progname) {
                         kvlb->cfg_filename = strdup(optarg);
                         break;
                 case 'w':
-                        hkt->lossy_window = strdup(optarg);
+                        hkt->lossy_window_size = strtoul(optarg, NULL, 10);
                         break;
                 case 'p':
                         print_delay = strtoul(optarg, NULL, 10);
@@ -235,7 +213,7 @@ do_stats_display(struct rte_mbuf* pkt) {
         printf("-----\n");
         printf("Port : %d\n", pkt->port);
         printf("Size : %d\n", pkt->pkt_len);
-        printf("N°   : %"PRIu64"\n", pkt_process);
+        printf("N掳   : %"PRIu64"\n", pkt_process);
         printf("\n\n");
 
         ip = onvm_pkt_ipv4_hdr(pkt);
@@ -261,7 +239,7 @@ print_flow_info(struct flow_info *f){
 
 /*
  * This function parses the backend config. It takes the filename 
- * and fills up the backend_server array. This includes the mac and ip 
+ * and fills up the server array. This includes the mac and ip 
  * address of the backend servers
  */
 static int
@@ -279,25 +257,25 @@ parse_backend_config(void) {
         if (temp <= 0) {
                 rte_exit(EXIT_FAILURE, "Error parsing config, need at least one server configurations\n");
         }
-        kvlb->server_count = temp;
+        kvlb->number_of_server = temp;
 
-        kvlb->server = (struct backend_server *)rte_malloc("backend server info", sizeof(struct backend_server) * kvlb->server_count, 0);
+        kvlb->server = (struct server *)rte_malloc("backend server info", sizeof(struct server) * kvlb->number_of_server, 0);
         if (kvlb->server == NULL) {
                 rte_exit(EXIT_FAILURE, "Malloc failed, can't allocate server information\n");
         }
 
-        for (i = 0; i < kvlb->server_count; i++) {
+        for (i = 0; i < kvlb->number_of_server; i++) {
                 ret = fscanf(cfg, "%s %s", ip, mac);
                 if (ret != 2) {
                         rte_exit(EXIT_FAILURE, "Invalid backend config structure\n");
                 }
 
-                ret = onvm_pkt_parse_ip(ip, &kvlb->server[i].d_ip);
+                ret = onvm_pkt_parse_ip(ip, &kvlb->server[i].server_ip);
                 if (ret < 0) {
                         rte_exit(EXIT_FAILURE, "Error parsing config IP address #%d\n", i);
                 }
 
-                ret =onvm_pkt_parse_mac(mac, kvlb->server[i].d_addr_bytes);
+                ret =onvm_pkt_parse_mac(mac, kvlb->server[i].server_addr_bytes);
                 if (ret < 0) {
                         rte_exit(EXIT_FAILURE, "Error parsing config MAC address #%d\n", i);
                 }
@@ -305,13 +283,13 @@ parse_backend_config(void) {
 
         fclose(cfg);
         printf("\nARP config:\n");
-        for (i = 0; i < kvlb->server_count; i++) {
+        for (i = 0; i < kvlb->number_of_server; i++) {
                 printf("%" PRIu8 ".%" PRIu8 ".%" PRIu8 ".%" PRIu8 " ", 
-                        kvlb->server[i].d_ip & 0xFF, (kvlb->server[i].d_ip >> 8) & 0xFF, (kvlb->server[i].d_ip >> 16) & 0xFF, (kvlb->server[i].d_ip >> 24) & 0xFF);
+                        kvlb->server[i].server_ip & 0xFF, (kvlb->server[i].server_ip >> 8) & 0xFF, (kvlb->server[i].server_ip >> 16) & 0xFF, (kvlb->server[i].server_ip >> 24) & 0xFF);
                 printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
-                        kvlb->server[i].d_addr_bytes[0], kvlb->server[i].d_addr_bytes[1],
-                        kvlb->server[i].d_addr_bytes[2], kvlb->server[i].d_addr_bytes[3],
-                        kvlb->server[i].d_addr_bytes[4], kvlb->server[i].d_addr_bytes[5]);
+                        kvlb->server[i].server_addr_bytes[0], kvlb->server[i].server_addr_bytes[1],
+                        kvlb->server[i].server_addr_bytes[2], kvlb->server[i].server_addr_bytes[3],
+                        kvlb->server[i].server_addr_bytes[4], kvlb->server[i].server_addr_bytes[5]);
         }
 
         return ret;
@@ -380,41 +358,24 @@ get_iface_inf(void) {
 }
 
 
+/**************************************************/
+/*********** packet handler related ***************/
+/**************************************************/
+static int update_flow_isactive(uint64_t elapsed_cycles,struct flow_info *data);
+static int ft_clear(void);
+static int ft_add(struct onvm_ft_ipv4_5tuple* key, struct flow_info **flow);
+static int ft_lookup(struct rte_mbuf* pkt, struct flow_info **flow);
+hotkey* parse_mc_key(struct rte_mbuf* pkt, int offset);
+static int hotkey_freq_decrease(void);
+static int hotkey_output(void);
+static int hotkey_lookup(char *k, char *v);
+static int hotkey_detector(struct hotkey* hk);
+static int cache_lookup(char* key);
+static int send_cached_data;
+static int nohk_packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta, struct flow_info* flow_info, struct hotkey* hk, struct* ether_hdr ether);
+static int hk_packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta, struct flow_info* flow_info, struct hotkey* hk, struct ether_hdr* ether);
 
 
-/*********** data struct implementation ***********/
-//TODO: dynamic hot key structure implementation
-/* init hotkey table as a dynamic array */
-static int
-hkt_init()
-
-static int
-hkt_append()
-
-static int
-hkt_delete()
-
-static int
-hkt_clear()
-
-static int
-hkt_is_empty()
-
-//TODO: local cache structure implementation
-static int
-cache_init()
-
-static int
-cache_add()
-
-static int
-cache_clear()
-
-static int
-cache_is_empty()
-
-
-/*********** packet handler related ***********/
 /* update if flow is active */
 static int
 update_flow_isactive(uint64_t elapsed_cycles,struct flow_info *data){
@@ -471,7 +432,7 @@ ft_clear(void){
 
 /* add an entry to flow table */
 static int
-ft_add(struct onvm_nf_ipv4_5tuple* key, struct flow_info **flow){
+ft_add(struct onvm_ft_ipv4_5tuple* key, struct flow_info **flow){
         struct flow_info *data = NULL;
 
         if (unlikely(key == NULL || kvlb == NULL)) {
@@ -479,7 +440,7 @@ ft_add(struct onvm_nf_ipv4_5tuple* key, struct flow_info **flow){
         }
 
         // table avaiable, if full then clean
-        if (TABLE_SIZE - kvlb->num_stored - 1 == 0) {
+        if (FLOW_TABLE_SIZE - kvlb->num_stored - 1 == 0) {
                 int ret = ft_clear();
                 if (ret < 0) {
                         return -1;
@@ -496,6 +457,9 @@ ft_add(struct onvm_nf_ipv4_5tuple* key, struct flow_info **flow){
         data->dest = kvlb->num_stored % kvlb->number_of_server;
         data->last_pkt_cycles = kvlb->elapsed_cycles;
         data->is_active = 0;
+
+        *flow = data;
+        return 0;
 }
 
 
@@ -529,42 +493,240 @@ ft_lookup(struct rte_mbuf* pkt, struct flow_info **flow){
         }
 }
 
-/* handle packet before hotkey table generated */
-static int
-nohk_packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta, struct flow_info* flow_info, int data_offset) {
+
+/* parse memcached data from packet */
+hotkey* parse_mc_key(struct rte_mbuf* pkt, int offset){
+        struct hotkey *hk;
+
+        char *data;
+
+        // get kv pair from pkt with offset of ether_hdr + ip_hdr + udp_hdr
+        data = (char *)rte_pktmbuff_mtod_offset(pkt, char *, offset);
+
+        strncpy(hk->mc_key, data, MCKEY_LEN);
         
-        if (pkt->port == kvlb->port_client) {
-                ip->dst_addr = 0;
+        if (strlen(data) > MCKEY_LEN) {
+                strcpy(hk->mc_value, &data[MCKEY_LEN + 1]);
+        }
+        
+        hk->lossy_counter = -1;
+
+        return hk;
+}
+
+
+/* decrease counter when reach window boudary */
+static int
+hotkey_freq_decrease(void){
+        int i;
+        // interate all hot key in hotkey table, decrease each by 1
+        // drop the hotkey if lossy_counter reaches 1
+        for(i = 0; i < hkt->num_stored; i++)
+        {
+                hkt->hks[i]->lossy_counter --;
+                if (hkt->hks[i]->lossy_counter == 1) {
+                    hkt_delete(hkt, hkt->hks[i]->mc_key);
+                }
+        }
+        return 0;
+}
+
+
+/* output the hotkey table to local cache, and reset all counter */
+static int
+hotkey_output(void){
+        int threshold = 0;
+
+        // compute hotkey for first time 
+        if (hkt->is_ht_detected == 0 && cache->count == 0) {
+                if (cache == NULL) {
+                    printf("error occur when create local cache");
+                    return -1;
+                }
+        // later 
         } else {
-                ip->src_addr = 0;
+                cache = cache_clear(cache);
+                if (cache == NULL) {
+                    printf("error occur when clear local cache");
+                    return -1;
+                }
         }
 
-        int ret = ft_lookup(pkt, &flow_info);
+        // calculate lossy counting threshold
+        threshold = (hkt->frequency - hkt->error) * hkt->num_stored;
+
+        // 
+        hkt_filter_above_threshold(hkt, threshold);
+
+        if (cache->kvs[0] != NULL) {
+                /* code */
+        }
+
+        // start next round of lossy counting 
+        hkt->num_stored = 0;
+        hkt->elapsed_couter = 0;
+
+        return 0;
+}
+
+
+/* look hotkey in hotkey table */
+static int
+hotkey_lookup(char *k, char *v){
+        int index = 0;
+
+        if (unlikely(k[0] == '\0' || v[0] == '\0')) {
+            return -1;
+        }
+
+        index = hkt_getindex(hkt, k);
+        // cannot find -- new key
+        if ( index == -1 ) {
+                hkt_insert(hkt, k, "\0");
+        // find a key without value, then we assign it
+        } else if( index != -1 || hkt->hks[index]->mc_value[0] == '\0' || v[0] != '\0' ) { 
+                strcpy(hkt->hks[index]->mc_value, v);
+                hkt->hks[index]->lossy_counter ++;
+        } else {
+                hkt->hks[index]->lossy_counter ++;
+        }
+
+        return 0;
+}
+
+
+static int
+hotkey_detector(struct hotkey* hk){
+        int ret;
+
+        // lossy counting
+        hkt->elapsed_couter ++;
+        if (hkt->elapsed_couter > hkt->lossy_window_size) {
+                hotkey_freq_decrease();
+                hkt->elapsed_couter = 0;
+                hkt->elapsed_window ++;
+                if ((hkt->elapsed_window * hkt->lossy_window_size) + 1 > hkt->ht_table_size) {
+                    hotkey_output();
+                }
+        }
+
+        // look up given hot key, if not found then add
+        ret = hotkey_lookup(hk->mc_key, hk->mc_value);
+        if (ret == -1) {
+                printf("Error occur when lookup the memcached key in hotkey table");
+                return -1;
+        }
+
+        return 0;
+}
+
+
+/* lookup given key in local cache */
+static int
+cache_lookup(char* key){
+        char *value = NULL;
+        int index;
+
+        if (unlikely(key[0] == '\0')) {
+            return -1;
+        }
+
+        value = realloc(cache_search(cache, key), );
+        //TODO:
+        index = cache_getindex(cache, key);
+        // not found in cache
+        if ( value == NULL ) {
+                return 2;
+        } else {
+                strcpy(c_kv->mc_key, key);
+                strcpy(c_kv->mc_value, value);
+                hkt->hks[index]->lossy_counter ++;
+        }
+
+        return 0;
+}
+
+
+static int
+send_cached_data(struct hotkey* hk,  int type){
+        int send_data_socket;
+        struct sockaddr_in des_addr;
+        socklen_t addr_size;
+
+        char *value;
+        char *data;
+        
+        // search key in cache or in hk_table 
+        if (type == 1) {
+                // cache hit
+                value = cache_search(cache, hk->mc_key);
+        } else {
+                // hotkey table hit 
+                value = hkt_search(hkt, hk->mc_key);
+        }
+
+        // check if get value correctly
+        if (value[0] == '\0' || value == NULL) {
+                printf("error occur when search stored kv");
+                return -1;
+        }
+        
+        // concartenate final data
+        //TODO:
+        data = strncat(data, hk->mc_key, MCKEY_LEN);
+        data = strncat(data, value, MCVALUE_LEN);
+
+        // addr stuff
+        des_addr.sin_family = AF_INET;
+        des_addr.sin_port = htons(11212);
+        des_addr.sin_addr.s_addr = inet_addr("192.168.1.1");
+        addr_size = sizeof(des_addr);
+
+        // create udp socket 
+        send_data_socket = socket(PF_INET, SOCK_DGRAM, 0);
+
+        // send hotkey back to client, then close
+        sendto(send_data_socket, data, MCKEY_LEN + MCVALUE_LEN, 0, (struct sockaddr*)&des_addr, addr_size);
+        close(send_data_socket);
+
+        return 0;
+}
+
+
+/* handle packet before hotkey table generated */
+static int
+nohk_packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta, struct flow_info* flow_info, struct hotkey* hk, struct* ether_hdr ether) {
+        int ret;
+        int i;
+
+        ret = ft_lookup(pkt, &flow_info);
         if (ret == -1) {
                 meta->action = ONVM_NF_ACTION_DROP;
                 meta->destination = 0;
         }
 
         hkt->elapsed_couter = 0;
-        hkt->last_couter = 0;
-        ret = hotkeydetector(pkt, data_offset);
+        ret = hotkey_detector(hk);
         if (ret == -1) {
-                printf("error occur when detector");
+                printf("error occur when lossy counting");
+                return -1;
         }
 
+        // send data directly server if found in hotkey table
+        send_cached_data(hk, 2);
         // new packet, save its info
         if (flow_info->is_active == 0) {
-                flow_info->is_active == 1;
-                for(int i = 0; i < ETHER_ADDR_LEN; i++)
+                flow_info->is_active = 1;
+                for(i = 0; i < ETHER_ADDR_LEN; i++)
                 {
-                        flow_info->source_addr_bytes[i] = ether->source_addr_bytes
+                        flow_info->source_addr_bytes[i] = ether->source_addr_bytes;
                 }
         }
 
         // packet from server
         if (pkt->port == kvlb->port_server) {
                 rte_eth_macaddr_get(kvlb->port_server, &ether->s_addr);
-                for(int i = 0; i < ETHER_ADDR_LEN; i++)
+                for(i = 0; i < ETHER_ADDR_LEN; i++)
                 {
                         ether->d_addr.addr_bytes[i] = flow_info->source_addr_bytes[i];
                 }
@@ -589,170 +751,42 @@ nohk_packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta, struct flo
         meta->action = ONVM_NF_ACTION_OUT;
 }
 
-/* append hotkey to hotkey table */
-static int
-hotkey_add(char *k, char *v){
-        struct hotkey *hk;
-        int ret = 0;
 
-        hk->mc_key = k;
-        hk->mc_value = v;
-        hk->lossy_counter = 0;
-
-        //TODO: 取决于最后的数据结构
-        ret = hkt_append(hk);
-        if (ret == -1) {
-            retrun -1;
-        }
-
-        hkt->num_stored ++;
-        hkt->hk[num_stored - 1]->lossy_counter = 1;
-}
-
-
-/* look hotkey in hotkey table */
-static int
-hotkey_lookup(char *k, char *v){
-        int ret = 0;
-
-        if (unlikely(k == NULL)) {
-            return -1;
-        }
-        
-        //TODO:遍历现有的hotkey table
-        hk_index = 
-        if ( hk_index == -1 ) {
-            ret = hotkey_add(k, v);
-
-            if (ret == -1) {
-                printf("error occur when add the memcached key to hotkey table");
-                return -1;
-            }
-        } else {
-            hkt->hk[hk_index]->lossy_counter ++;
-        }
-
-        return 0;
-}
-
-
-/* decrease counter when reach window boudary */
-void
-hotkey_freq_decrease(){
-        
-        // interate all hot key in hotkey table, decrease each by 1
-        // drop the hotkey if lossy_counter reaches 1
-        for(uint16_t i = 0; i < hkt->num_stored; i++)
-        {
-                hkt->ht[i]->lossy_counter --;
-                if (hkt->ht[i]->lossy_counter == 1) {
-                    hkt_delete(hkt->ht[i]);
-                }
-        }
-}
-
-
-/* output the hotkey table to local cache, and reset all counter */
-static int
-hotkey_output(){
-        int thershold = 0;
-        int ret = 0;
-
-        // prepare local cache
-        // compute hotkey for first time 
-        if (hkt->is_ht_detected == 0 && hkt->num_stored == 0) {
-                ret = cache_init();
-                if (ret == -1) {
-                    printf("error occur when create local cache");
-                    return -1;
-                }
-        } else { // later
-                cache_clear();
-                ret = cache_is_empty();
-                if (ret == -1) {
-                    printf("error occur when clear local cache");
-                    return -1;
-                }
-        }
-
-        // calculate lossy counting thershold
-        thershold = (hkt->frequency - hkt->error) * hkt->num_stored
-
-        // iterate hotkey table, 
-        for(uint16_t i = 0; i < hkt->num_stored; i++)
-        {
-                if(hkt->[i]->lossy_counter > thershold){
-                        //TODO:
-                        cache_append();
-                }
-                hkt_delete();
-        }
-
-        hkt->num_stored = 0;
-        hkt->elapsed_couter = 0;
-
-        //TODO: hotkey table是否空了
-        if (/* condition */) {
-            /* code */
-        }
-        
-}
-
-
-static int
-hotkey_detector(struct rte_mbuf* pkt, int offset){
-        char k[MCKEY_LEN];
-        char v[MCVALUE_LEN];
-        char data[MCKEY_LEN + MCVALUE_LEN];
-        int ret;
-
-        if(unlikely(pkt == NULL || offset == 0)){
-            return -1;
-        }
-
-        // get kv pair from pkt with offset of ether_hdr + ip_hdr + udp_hdr
-        data = (char *)rte_pktmbuff_mtod_offset(pkt, u_char *, offset);
-        for(int i = 0; i < MCKEY_LEN; i++)
-        {
-                k[i] = data[i];
-        }
-        for(int i = 0; i < MCVALUE_LEN; i++)
-        {
-                v[i] = data[MCKEY_LEN + i];
-        }
-
-        // lossy counting
-        hkt->elapsed_couter ++;
-        if (hkt->elapsed_couter > hkt->lossy_window) {
-                hotkey_freq_decrease();
-                hkt->elapsed_couter = 0;
-                hkt->elapsed_window ++;
-                if ((hkt->elapsed_window * hkt->lossy_window) + 1 > hkt->ht_table_size) {
-                    hotkey_output();
-                }
-        }
-
-        ret = hotkey_lookup(k, v);
-        if (ret == -1) {
-                printf("Error occur when lookup the memcached key in hotkey table");
-                return -1;
-        }
-
-        return 0;
-}
-
-//TODO:
 /* handle packet after a hotkey table generated and have loacl cache */
 static int
-hk_packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta, struct flow_info* flow_info, struct udp_hdr* udp) {
+hk_packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta, struct flow_info* flow_info, struct hotkey* hk, struct ether_hdr* ether) {
+        int ret = 0;
 
+        if (hkt->is_ht_detected == 1) {
+                ret = cache_lookup(hk->mc_key); 
+                if (ret == -1) {
+                        printf("error looking up cached hot key-value");
+                        return -1;
+                // local cache miss
+                } else if(ret == 2 ){
+                        nohk_packet_handler(pkt, meta, flow_info, hk, ether);
+                } else {
+                        if (c_kv->mc_key[0] == '\0' || c_kv->mc_value[0] == '\0' ) {
+                                printf("Error occur when search cached kv");
+                                return -1;
+                        }
+
+                        // send data back to client from cache using udp socket
+                        send_cached_data(hk, 1);
+                }
+        // error
+        } else { 
+                printf("Tried to search cache without existing cache");
+                return -1;
+        }
+
+        return 0;
 }
 
 
-
-
-
-/*********** ONVM related function ***********/
+/**************************************************/
+/************** ONVM related function *************/
+/**************************************************/
 /* calledback every attempted  */
 static int
 callback_handler(__attribute__((unused)) struct onvm_nf_info *nf_info) {
@@ -776,24 +810,39 @@ packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta) {
         struct ether_hdr *ether;
         struct flow_info *flow_info;
 
+        struct hotkey *hk;
         int data_offset = 0;
 
         ether = onvm_pkt_ether_hdr(pkt);
         ip = onvm_pkt_ipv4_hdr(pkt);
         udp = onvm_pkt_udp_hdr(pkt);
 
+        // drop invalid packet
         if (ether == NULL || ip->src_addr == 0 || ip->dst_addr == 0 || udp == NULL) {
                 meta->action = ONVM_NF_ACTION_DROP;
                 meta->destination = 0;
                 return 0;
         }
 
-        data_offset = sizeof(ether_hdr) + sizeof(ipv4_hdr) + sizeof(udp_hdr);
-
-        if (hkt->is_ht_detected == 0) {
-            nohk_packet_handler(pkt, meta, flow_info, data_offset);
+        if (pkt->port == kvlb->port_client) {
+                ip->dst_addr = 0;
         } else {
-            hk_packet_handler();
+                ip->src_addr = 0;
+        }
+
+        // parse memcached data from packet
+        data_offset = sizeof(ether_hdr) + sizeof(ipv4_hdr) + sizeof(udp_hdr);
+        hk = *parse_mc_key(pkt, data_offset);
+        if (strcmp(hk->mc_key, "") == 0) {
+                printf("error occur when parse memcached key from packet");
+                return -1;
+        }
+
+        // process packet based on if hotkey detected
+        if (hkt->is_ht_detected == 0) {
+            nohk_packet_handler(pkt, meta, flow_info, hk, ether);
+        } else {
+            hk_packet_handler(pkt, meta, flow_info, hk, ether);
         }
 
         if(++counter == print_delay){
@@ -807,9 +856,9 @@ packet_handler(struct rte_mbuf* pkt, struct onvm_pkt_meta* meta) {
 
 
 
-
-
-/*********** main func ***********/
+/**************************************************/
+/******************* main func ********************/
+/**************************************************/
 int main(int argc, char *argv[]) {
         int arg_offset;
         const char *progname = argv[0];
@@ -837,6 +886,12 @@ int main(int argc, char *argv[]) {
                 rte_exit(EXIT_FAILURE, "Unable to create flow table");
         }
 
+        get_iface_inf();
+        parse_backend_config();
+
+        cache = cache_init();
+        hkt = hk_table_init();
+
         hkt->is_ht_detected = 0;
         hkt->lossy_total = 1000;
         hkt->frequency = 0.2;
@@ -845,7 +900,7 @@ int main(int argc, char *argv[]) {
         kvlb->expire_time = 32;
         kvlb->elapsed_cycles = rte_get_tsc_cycles();
 
-        onvm_nflib_run_callback(nf_info, &packet_handler);
+        onvm_nflib_run_callback(nf_info, &packet_handler, &callback_handler);
         printf("If we reach here, program is ending\n");
         return 0;
 }
