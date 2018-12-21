@@ -4,7 +4,7 @@
 
 This is a network function virtuliazation(NFV) research project, based on [OpenNetVM](https://github.com/sdnfv/openNetVM) and DPDK api to bypass linux kernel overhead.
 
-We implemented a key-value load balancer with cache and pre-cache on hotkeys detected by lossying counting. Main idea is inspired by a paper
+We implemented a key-value load balancer with cache and pre-cache on hotkeys detected by lossy counting (with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf) for detail). Main idea is inspired by a paper
 [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf), but we adapted the algorithem and design.
 
 The Key-value data is stored in a cluster of Memcached servers and only about GET action for sake of similicity of research. The testing enviorment on [CloudLab](https://cloudlab.us/), to which we want to say THANKYOU.
