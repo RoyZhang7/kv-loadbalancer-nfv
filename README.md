@@ -19,6 +19,10 @@ As I continue work on this topic, I am intended to implement more complex featur
 - Managing repliction with DHT
 - Adapting lossy counting (weighted)
 
+# Milestone
+
+Max throughput for single key reaches 7M. Something weird appears when I was collecting data, which could caused by be a problem in ONVM manager. I will invastigate it with other member in OVNM.
+
 ## Todo
 
 - Adapting lossy counting (self-adaptive)
