@@ -12,14 +12,16 @@ The testing enviorment on [CloudLab](https://cloudlab.us/), to which we speciall
 ## In-Dev
 
 As I continue work on this topic, I am intended to implement more complex features, adapt its architecture/algorithms, and maybe finish a research paper on it.
+  
 
-- Using DPDK api to create UDP packet
-- Testing ONVM api of creating UDP packet
-- Handling Memcached Set action (especially data consistency)
-- Managing repliction with DHT
-- Adapting lossy counting (weighted)
+  - [x] Using DPDK api to create UDP packet
+  - [x] Testing ONVM api of creating UDP packet
+  - [x] Handling Memcached Set action (especially data consistency)
+  - [ ] Managing repliction with DHT
+  - [ ] Adapting lossy counting (weighted)
 
-# Milestone
+
+## Milestone
 
 Max throughput for single key reaches 7M. Something weird appears when I was collecting data, which could caused by be a problem in ONVM manager. I will invastigate it with other member in OVNM.
 
