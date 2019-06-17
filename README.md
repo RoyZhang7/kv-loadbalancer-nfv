@@ -4,7 +4,9 @@
 
 This is a network function virtuliazation(NFV) research project, based on [OpenNetVM](https://github.com/sdnfv/openNetVM) for NFV support and [Intel DPDK](https://www.dpdk.org/) for bypassing kernel overhead, at GWU with Professor [Timothy Wood](http://faculty.cs.gwu.edu/timwood/). 
 
-Last winter, I implemented a key-value load balancer as virtualizaed network function with hot key cache and lossy counting pre-cache.  Lossy counting was used for hotkey detection(with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf) for detail). Main idea is inspired by [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf), but we adapted the algorithem and design. The key-value data is stored in a cluster of Memcached servers and only handle UDP-based transmission for sake of similicity right now.
+Last winter, I implemented a key-value load balancer as a virtualizaed network function with hot key cache and lossy counting pre-cache.  Lossy counting was used for hotkey detection(with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf) for detail). Main idea is inspired by [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf), but we adapted the algorithem and design. The key-value data is stored in a cluster of Memcached servers, but only handle UDP-based transmission and get action by then.
+
+This spring, I prposed a new balancer design with skip list as the second layer cache and implemented set action mechanism. The max throughput of set action reached 7M/sec. Currently, I am working on building an load generator for Memcache that is based on NFV and is for hugh number of packet generation purpose, in same time adapting lossy counting algorithm.
 
 The testing enviorment on [CloudLab](https://cloudlab.us/), to which we specially want to say THANK YOU!
 
