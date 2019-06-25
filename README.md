@@ -2,7 +2,7 @@
 
 ## Description
 
-This is a network function virtuliazation(NFV) research project, based on [OpenNetVM](https://github.com/sdnfv/openNetVM) for NFV support and [Intel DPDK](https://www.dpdk.org/) for bypassing kernel overhead, at GWU with Professor [Timothy Wood](http://faculty.cs.gwu.edu/timwood/). 
+This is a network function virtuliazation(NFV) research project, based on [OpenNetVM](https://github.com/sdnfv/openNetVM) for NFV support and [Intel DPDK](https://www.dpdk.org/), at GWU with Professor [Timothy Wood](http://faculty.cs.gwu.edu/timwood/). 
 
 Last winter, I implemented a key-value load balancer as a virtualizaed network function with hot key cache and lossy counting pre-cache.  Lossy counting was used for hotkey detection(with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf) for detail). Main idea is inspired by [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf), but we adapted the algorithem and design. The key-value data is stored in a cluster of Memcached servers, but only handle UDP-based transmission and get action by then.
 
