@@ -6,7 +6,7 @@ This is a network function virtuliazation(NFV) research project, based on [OpenN
 
 Last winter, I implemented a key-value load balancer as a virtualizaed network function with hot key cache and lossy counting pre-cache.  Lossy counting was used for hotkey detection(with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf) for detail). Main idea is inspired by [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf), but we adapted the algorithem and design. The key-value data is stored in a cluster of Memcached servers, but only handle UDP-based transmission and get action by then.
 
-This spring, I prposed a new balancer design with skip list as the second layer cache and implemented set action mechanism. The max throughput of set action reached 7M/sec. Currently, I am working on building an load generator for Memcache that is based on NFV and is for hugh number of packet generation purpose, in same time adapting lossy counting algorithm.
+This spring, I prposed a new balancer design with skip list as the second layer cache and implemented set action mechanism. The max throughput of set action reached 7M/sec. Currently, I am working on building an load generator for Memcache that is based on ONVM for hugh number of packet generation purpose, which will be used to adapt lossy counting algorithm.
 
 The testing enviorment on [CloudLab](https://cloudlab.us/), to which we specially want to say THANK YOU!
 
@@ -33,6 +33,14 @@ As I continue work on this topic this spring, I intend to implement more complex
   - Self-adaptive lossy counting
   - Basic fault tolerance without affecting performance(low priority)
   - TCP-based transmisson (low priority)
+
+## Usage
+
+**Not available for general user yet.**
+
+I will provide intruction on other system/platform on the planned releasing.
+
+This project requires installation of OpenNetVM(including DPDK). The easiest way to use it is creating a cluster with CloudLab profile.(strict to authroized academic user in US only).
 
 ## Project structure
 
