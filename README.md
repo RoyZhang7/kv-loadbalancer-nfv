@@ -6,16 +6,16 @@ This is a network function virtuliazation(NFV) research project, based on [OpenN
 
 Before my graduation from GW, I firstly implemented a key-value load balancer as a virtualizaed network function with hot key cache and lossy counting pre-cache.  Lossy counting was used for hotkey detection(with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf)). Main idea is inspired by [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf). Later, I prposed a new balancer design with skip list as the second layer cache and implemented set action mechanism. The max throughput of set action reached 7M/sec.
 
-After graduation, I still co-op with memebers in GW NFV group on a brand new TCP-splicer-like L4+L7 proxy+LB, which inspired on this repo a lot.
+After graduation, I still co-op with memebers in GW NFV group on a brand new TCP-splicer-like L4+L7 proxy+LB for Redis and other general application, which inspired on this repo a lot.
 
 The testing enviorment on [CloudLab](https://cloudlab.us/), to which we specially want to say THANK YOU!
 
 ## Milestone
 
   1. Old LB
-    - Implemented load balancing for Memcached set&get action. Balancing mechamism is based on hot-keys detected using lossy counting algothrim.
-    - Implemented two layers of caching--one hotkey hash table, another "half-always on" skip list.
-    - Max throughput for single key reaches 7M.
+      - Implemented load balancing for Memcached set&get action. Balancing mechamism is based on hot-keys detected using lossy counting algothrim.
+      - Implemented two layers of caching--one hotkey hash table, another "half-always on" skip list.
+      - Max throughput for single key reaches 7M.
   
   2. New L4 Proxy + LB
     
