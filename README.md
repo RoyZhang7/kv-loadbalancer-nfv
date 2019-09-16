@@ -21,15 +21,12 @@ The testing enviorment on [CloudLab](https://cloudlab.us/), to which we speciall
     
 
 ## Features of old KVLB
-
-As I continue work on this topic this spring, I intend to implement more complex features, adapt its architecture/algorithms, and maybe finish a research paper on it.
   
   - [x] Using DPDK api to create UDP packet
   - [x] Testing & using ONVM api to create UDP packet
   - [x] Handling Memcached Set action //data consistency
   - [x] Two layers of caching
   - [x] Managing repliction with DHT
-
 
 ## Potential Direction (low priority)
 
