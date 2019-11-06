@@ -2,22 +2,25 @@
 
 ## Description
 
-This is a network function virtuliazation(NFV) research project, based on [OpenNetVM](https://github.com/sdnfv/openNetVM) for NFV support and [Intel DPDK](https://www.dpdk.org/), at GWU with Professor [Timothy Wood](http://faculty.cs.gwu.edu/timwood/). 
+This is a network function virtuliazation(NFV) research project, based on [OpenNetVM](https://github.com/sdnfv/openNetVM) as NFV platform, at GWU with Professor [Timothy Wood](http://faculty.cs.gwu.edu/timwood/). 
 
-Before my graduation from GW, I firstly implemented a key-value load balancer as a virtualizaed network function with hot key cache and lossy counting pre-cache.  Lossy counting was used for hotkey detection(with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf)). Main idea is inspired by [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf). Later, I prposed a new balancer design with skip list as the second layer cache and implemented set action mechanism. The max throughput of set action reached 7M/sec.
+I currently co-op with memebers in GW NFV group on another big project, which was inspired by this repo a lot. It is a L7 stateless load balancer in L4 level--handling Redis load based on TCP-splicing, along with a Redis "NFVlized" solution and a availability solution during Redis migration using NFV.
 
-After graduation, I still co-op with memebers in GW NFV group on a brand new TCP-splicer-like L4+L7 proxy+LB for Redis and other general application, which inspired on this repo a lot.
+Before my graduation from master's degree, I firstly implemented a key-value load balancer as a virtualizaed network function with hot key cache and lossy counting pre-cache.  Lossy counting was used for hotkey detection(with frequency threshold 0.2 and error rate 0.02, see this [paper](https://micvog.files.wordpress.com/2015/06/approximate_freq_count_over_data_streams_vldb_2002.pdf)). Main idea is inspired by [NetKV](http://faculty.cs.gwu.edu/timwood/papers/16-ICAC-netkv.pdf). Later, I prposed a new balancer design with skip list as the second layer cache and implemented set action mechanism. The max throughput of set action reached 7M/sec.
 
-The testing enviorment on [CloudLab](https://cloudlab.us/), to which we specially want to say THANK YOU!
+The testing and development enviorment on [CloudLab](https://cloudlab.us/), to which we specially want to say THANK YOU!
 
 ## Milestone
 
-  1. Old LB
+  1. Current packet-level stateless L7 LB
+      on going.
+  
+  2. Old project
       - Implemented load balancing for Memcached set&get action. Balancing mechamism is based on hot-keys detected using lossy counting algothrim.
       - Implemented two layers of caching--one hotkey hash table, another "half-always on" skip list.
       - Max throughput for single key reaches 7M.
   
-  2. New L4 Proxy + LB
+  
     
 
 ## Features of old KVLB
@@ -38,11 +41,9 @@ The testing enviorment on [CloudLab](https://cloudlab.us/), to which we speciall
 
 ## Usage
 
-**Not available for public user yet.**
+**May not available for public usage in a long time.**
 
-I will provide intruction on other system/platform on the planned releasing.
-
-This project requires installation of OpenNetVM(including DPDK). The easiest way to use it is creating a cluster with CloudLab profile.(strict to authroized academic user in US only).
+I will provide intruction if this research get published someday.
 
 ## Project structure
 
