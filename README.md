@@ -1,4 +1,4 @@
-# A KV load balancer (Memcached)
+# A NFV-based KV load balancer for Memcached
 
 ## Description
 
