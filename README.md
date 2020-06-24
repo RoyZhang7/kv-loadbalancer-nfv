@@ -1,7 +1,7 @@
 # A NFV-based KV load balancer for Memcached
 
 ## Description
-
+**This project is abandoned as I am pursuing Ph.D. in another field**
 This is a network function virtuliazation(NFV) research project, based on [OpenNetVM](https://github.com/sdnfv/openNetVM) as NFV platform, at GWU with Professor [Timothy Wood](http://faculty.cs.gwu.edu/timwood/). 
 
 I currently co-op with memebers in GW NFV group on another big project, which was inspired by this repo a lot. It is a L7 stateless load balancer in L4 level--handling Redis load based on TCP-splicing, along with a Redis "NFVlized" solution and a availability solution during Redis migration using NFV.
